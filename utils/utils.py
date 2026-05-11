@@ -174,6 +174,17 @@ def extract_pfx(pfxpath, certpath, keypath):
     subprocess.run(f'openssl pkcs12 -in {pfxpath} -nodes -password pass:password -out {keypath} -nocerts -nodes', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
     return
 
+def decrypt_encrypted_body(encrypted_xml: str, cert_path: str, key_path: str) -> str:
+    m = re.search(r"<(?:\w+:)?EncryptedContent>([^<]+)</", encrypted_xml)
+    der = base64.b64decode(re.sub(r"\s+", "", m.group(1)))
+
+    result = subprocess.run(
+        ["openssl", "cms", "-decrypt", "-inform", "DER",
+         "-recip", cert_path, "-inkey", key_path],
+        input=der, capture_output=True, check=True,
+    )
+    return result.stdout.decode("utf-8", errors="replace")
+
 def get_str_and_next(blob, start):
     str_size = (struct.unpack('<I', blob[start:start+0x4])[0]) * 2
     str = blob[start+0xc:start+0xc+str_size].decode('utf-16le')
@@ -208,3 +219,8 @@ def aes_decrypt(key, iv, content):
     decryptor = cipher.decryptor()
     decrypted_data = decryptor.update(content) + decryptor.finalize()
     return decrypted_data
+
+def safe_filename(name):
+    for ch in '<>:"/\\|?*':
+        name = name.replace(ch, '_')
+    return name.strip().rstrip('.')
